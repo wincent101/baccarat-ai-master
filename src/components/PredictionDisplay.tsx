@@ -41,13 +41,10 @@ export function PredictionDisplay({ prediction }: Props) {
           </p>
         </div>
 
-        {/* Confidence bar */}
         <div className="w-full max-w-xs">
           <div className="h-2 bg-secondary rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                isPlayer ? 'bg-casino-blue' : 'bg-casino-red'
-              }`}
+              className={`h-full rounded-full transition-all duration-500 ${isPlayer ? 'bg-casino-blue' : 'bg-casino-red'}`}
               style={{ width: `${prediction.confidence}%` }}
             />
           </div>
@@ -57,12 +54,25 @@ export function PredictionDisplay({ prediction }: Props) {
           {prediction.reasoning}
         </p>
 
-        {/* Features */}
-        <div className="grid grid-cols-2 gap-3 w-full max-w-xs mt-2">
+        {/* Signals */}
+        {prediction.signals.length > 0 && (
+          <div className="w-full max-w-xs space-y-1">
+            {prediction.signals.map((s, i) => (
+              <div key={i} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-secondary/50">
+                <span className="text-muted-foreground truncate mr-2">{s.name}</span>
+                <span className={`font-semibold ${s.prediction === 'Player' ? 'text-casino-blue' : 'text-casino-red'}`}>
+                  {s.prediction[0]} ({(s.weight * 100).toFixed(0)}%)
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-4 gap-2 w-full max-w-xs mt-1">
           <FeatureChip label="Streak" value={prediction.features.streak.toString()} />
-          <FeatureChip label="P Ratio" value={`${(prediction.features.pRatio * 100).toFixed(0)}%`} />
-          <FeatureChip label="B Ratio" value={`${(prediction.features.bRatio * 100).toFixed(0)}%`} />
-          <FeatureChip label="T Ratio" value={`${(prediction.features.tRatio * 100).toFixed(0)}%`} />
+          <FeatureChip label="P" value={`${(prediction.features.pRatio * 100).toFixed(0)}%`} />
+          <FeatureChip label="B" value={`${(prediction.features.bRatio * 100).toFixed(0)}%`} />
+          <FeatureChip label="T" value={`${(prediction.features.tRatio * 100).toFixed(0)}%`} />
         </div>
       </div>
     </div>
@@ -71,9 +81,9 @@ export function PredictionDisplay({ prediction }: Props) {
 
 function FeatureChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-secondary rounded-md px-3 py-2 text-center">
-      <p className="text-muted-foreground text-xs">{label}</p>
-      <p className="text-foreground font-semibold text-sm">{value}</p>
+    <div className="bg-secondary rounded-md px-2 py-1.5 text-center">
+      <p className="text-muted-foreground text-[10px]">{label}</p>
+      <p className="text-foreground font-semibold text-xs">{value}</p>
     </div>
   );
 }
