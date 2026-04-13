@@ -37,7 +37,7 @@ export default function Index() {
       const prevPred = predict(prev, recentAccuracy);
       
       // สอน AI จากผลจริง
-      learnFromOutcome(prevPred.signals, prevPred.result, result);
+      learnFromOutcome(prev, prevPred.signals, prevPred.result, result);
       
       setPredictions((current) => [...current, prevPred.result]);
       return [...prev, result];
