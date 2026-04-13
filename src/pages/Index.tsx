@@ -81,7 +81,8 @@ export default function Index() {
         </p>
         <div className="mx-auto mt-3 h-0.5 w-24 bg-gradient-to-r from-transparent via-gold to-transparent" />
         <div className="mt-3 inline-flex rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs text-gold">
-          โหมดลดผิด: ถ้าไม่มั่นใจจะ SKIP อัตโนมัติ
+          🧠 AI เรียนรู้จากทุกตา: ปรับน้ำหนักอัตโนมัติ + SKIP เมื่อไม่มั่นใจ
+        </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           กด <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs text-foreground">P</kbd>{" "}
