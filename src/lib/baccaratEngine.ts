@@ -1,7 +1,8 @@
 import { getPatternMemory } from "./baccaratPatternMemory";
+import { getTrainingLog, TrainingLogEntry } from "./baccaratTrainingLog";
 
 export type BaccaratResult = "Player" | "Banker" | "Tie";
-export type PredictionResult = "Player" | "Banker" | "Skip";
+export type PredictionResult = "Player" | "Banker";
 type NonTieResult = Exclude<BaccaratResult, "Tie">;
 
 export interface Prediction {
@@ -32,7 +33,6 @@ export interface GameStats {
   correctPredictions: number;
   incorrectPredictions: number;
   attemptedPredictions: number;
-  skippedPredictions: number;
   currentStreak: number;
   streakType: BaccaratResult | null;
 }
@@ -46,13 +46,6 @@ interface SignalRecord {
   baseWeight: number;
 }
 
-/**
- * ระบบเรียนรู้ด้วยตัวเอง:
- * - ติดตามความแม่นยำของแต่ละ Signal
- * - ปรับน้ำหนักอัตโนมัติตามผลลัพธ์จริง
- * - Signal ที่ทายถูกบ่อย → น้ำหนักเพิ่ม
- * - Signal ที่ทายผิดบ่อย → น้ำหนักลด (ถึงขั้นติดลบ = สวนทาง)
- */
 class SignalTracker {
   private records: Map<string, SignalRecord> = new Map();
 
@@ -66,19 +59,14 @@ class SignalTracker {
     else rec.wrong++;
   }
 
-  /** คืนค่า multiplier สำหรับปรับน้ำหนัก: >1 = เก่ง, <1 = แย่ */
   getMultiplier(signalName: string): number {
     const rec = this.records.get(signalName);
     if (!rec) return 1.0;
     const total = rec.correct + rec.wrong;
-    if (total < 3) return 1.0; // ข้อมูลน้อยเกินไป ยังไม่ปรับ
+    if (total < 3) return 1.0;
 
     const accuracy = rec.correct / total;
-    // accuracy 50% → multiplier 0.3 (ลดมาก เพราะเท่ากับมัว)
-    // accuracy 60% → multiplier 1.0 (ปกติ)
-    // accuracy 70% → multiplier 1.5
-    // accuracy 80%+ → multiplier 2.0
-    if (accuracy < 0.45) return 0.1;  // แย่มาก แทบไม่ใช้
+    if (accuracy < 0.45) return 0.1;
     if (accuracy < 0.50) return 0.2;
     if (accuracy < 0.55) return 0.5;
     if (accuracy < 0.60) return 0.8;
@@ -106,7 +94,6 @@ class SignalTracker {
   }
 }
 
-// Global tracker instance
 const tracker = new SignalTracker();
 
 export function getSignalTracker(): SignalTracker {
@@ -179,6 +166,10 @@ function streakSignal(history: NonTieResult[]): Signal | null {
     const m = tracker.getMultiplier(SIGNAL_NAMES.DRAGON);
     return { name: SIGNAL_NAMES.DRAGON, prediction: last, weight: 0.34 * m };
   }
+  if (count === 3 || count === 4) {
+    const m = tracker.getMultiplier(SIGNAL_NAMES.STREAK3);
+    return { name: SIGNAL_NAMES.STREAK3, prediction: last, weight: 0.28 * m };
+  }
   if (count === 2) {
     const m = tracker.getMultiplier(SIGNAL_NAMES.PAIR);
     return { name: SIGNAL_NAMES.PAIR, prediction: last, weight: 0.22 * m };
@@ -221,11 +212,11 @@ function ratioSignal(history: NonTieResult[]): Signal | null {
   const recent = history.slice(-20);
   const playerRatio = recent.filter((r) => r === "Player").length / recent.length;
 
-  if (playerRatio >= 0.75) {
+  if (playerRatio >= 0.70) {
     const m = tracker.getMultiplier(SIGNAL_NAMES.RATIO_B);
     return { name: SIGNAL_NAMES.RATIO_B, prediction: "Banker", weight: 0.18 * m };
   }
-  if (playerRatio <= 0.25) {
+  if (playerRatio <= 0.30) {
     const m = tracker.getMultiplier(SIGNAL_NAMES.RATIO_P);
     return { name: SIGNAL_NAMES.RATIO_P, prediction: "Player", weight: 0.18 * m };
   }
@@ -233,7 +224,7 @@ function ratioSignal(history: NonTieResult[]): Signal | null {
 }
 
 function patternMatchSignal(history: NonTieResult[]): Signal | null {
-  if (history.length < 8) return null;
+  if (history.length < 6) return null;
   const patternLength = 3;
   const pattern = history.slice(-patternLength).join(",");
   let playerAfter = 0, bankerAfter = 0;
@@ -247,9 +238,9 @@ function patternMatchSignal(history: NonTieResult[]): Signal | null {
   }
 
   const total = playerAfter + bankerAfter;
-  if (total < 4) return null;
+  if (total < 2) return null;
   const dominant = Math.max(playerAfter, bankerAfter);
-  if (dominant / total >= 0.65) {
+  if (dominant / total >= 0.60) {
     const m = tracker.getMultiplier(SIGNAL_NAMES.PATTERN);
     return {
       name: SIGNAL_NAMES.PATTERN,
@@ -281,69 +272,8 @@ function memorySignal(history: BaccaratResult[]): Signal | null {
   };
 }
 
-// ==================== Adaptive Skip Logic ====================
-
-/**
- * ระบบ skip อัจฉริยะ:
- * - ใช้ margin (ความต่างระหว่าง Player กับ Banker score)
- * - ใช้จำนวน signals ที่เห็นด้วย
- * - ปรับ threshold ตาม recent accuracy (ถ้าทายผิดบ่อย → เข้มขึ้น)
- */
-function shouldSkip(
-  margin: number,
-  agreeingSignals: number,
-  totalSignals: number,
-  recentAccuracy: number,
-  historyLength: number
-): { skip: boolean; reason: string } {
-  // ข้อมูลน้อยเกินไป
-  if (historyLength < 5) {
-    return { skip: true, reason: "ข้อมูลยังน้อย รอดูก่อน" };
-  }
-
-  if (totalSignals === 0) {
-    return { skip: true, reason: "ยังไม่มี memory หรือ pattern ที่ได้เปรียบ" };
-  }
-
-  // ปรับ threshold ตาม recent accuracy
-  // ถ้าทายผิดบ่อย → ต้อง margin สูงขึ้นถึงจะยิง
-  let marginThreshold = totalSignals >= 3 ? 0.22 : 0.18;
-  let minAgree = totalSignals >= 3 ? 2 : 1;
-
-  if (recentAccuracy < 0.45) {
-    // ผิดเยอะมาก → เข้มสุด
-    marginThreshold = 0.32;
-    minAgree = 2;
-  } else if (recentAccuracy < 0.50) {
-    marginThreshold = 0.28;
-    minAgree = 2;
-  } else if (recentAccuracy < 0.55) {
-    marginThreshold = 0.24;
-  }
-
-  if (margin < marginThreshold) {
-    return { skip: true, reason: `สัญญาณก้ำกึ่ง (margin ${(margin * 100).toFixed(0)}% < ${(marginThreshold * 100).toFixed(0)}%)` };
-  }
-
-  if (totalSignals === 1 && margin < 0.34) {
-    return { skip: true, reason: "มีแค่สัญญาณเดียว ยังไม่คมพอ" };
-  }
-
-  if (agreeingSignals < minAgree && totalSignals >= 3) {
-    return { skip: true, reason: `สัญญาณหนุนน้อย (${agreeingSignals}/${totalSignals})` };
-  }
-
-  return { skip: false, reason: "" };
-}
-
 // ==================== Learning Function ====================
 
-/**
- * เรียกหลังจากได้ผลจริง เพื่อสอน AI
- * @param signalsUsed - สัญญาณที่ใช้ในการทำนายรอบก่อน
- * @param predictedResult - ผลที่ AI ทำนาย
- * @param actualResult - ผลจริง
- */
 export function learnFromOutcome(
   historyBeforeRound: BaccaratResult[],
   signalsUsed: Signal[],
@@ -351,7 +281,7 @@ export function learnFromOutcome(
   actualResult: BaccaratResult
 ) {
   getPatternMemory().learn(historyBeforeRound, actualResult);
-  if (predictedResult === "Skip" || actualResult === "Tie") return;
+  if (actualResult === "Tie") return;
 
   for (const signal of signalsUsed) {
     const wasCorrect = signal.prediction === actualResult;
@@ -361,82 +291,104 @@ export function learnFromOutcome(
 
 // ==================== Main Prediction ====================
 
-export function predict(history: BaccaratResult[], recentAccuracy: number = 0.5): Prediction {
+export function predict(history: BaccaratResult[]): Prediction {
   const features = computeFeatures(history);
   const cleanHistory = nonTie(history);
 
-  if (cleanHistory.length < 5) {
-    return {
-      result: "Skip",
-      confidence: 0,
-      features,
-      reasoning: "รอข้อมูลเพิ่ม (ต้องมีอย่างน้อย 5 ตาที่ไม่ใช่ Tie)",
-      signals: [],
-      shouldBet: false,
-    };
-  }
-
+  // Collect all signals
   const signals = [
     memorySignal(history),
     streakSignal(cleanHistory),
+    chopSignal(cleanHistory),
     doubleSignal(cleanHistory),
     ratioSignal(cleanHistory),
     patternMatchSignal(cleanHistory),
   ].filter((s): s is Signal => Boolean(s));
 
-  const playerSignals = signals.filter((s) => s.prediction === "Player");
-  const bankerSignals = signals.filter((s) => s.prediction === "Banker");
+  // Always add banker edge as tiebreaker
+  const bankerEdge = bankerEdgeSignal();
+
+  const allSignals = signals.length > 0 ? signals : [bankerEdge];
+
+  const playerSignals = allSignals.filter((s) => s.prediction === "Player");
+  const bankerSignals = allSignals.filter((s) => s.prediction === "Banker");
 
   const playerScore = sumWeights(playerSignals);
   const bankerScore = sumWeights(bankerSignals);
   const totalScore = playerScore + bankerScore;
 
   const margin = totalScore === 0 ? 0 : Math.abs(playerScore - bankerScore) / totalScore;
-  const result: NonTieResult = playerScore > bankerScore ? "Player" : "Banker";
+  
+  // Always pick a side - never skip
+  let result: PredictionResult;
+  if (playerScore > bankerScore) {
+    result = "Player";
+  } else if (bankerScore > playerScore) {
+    result = "Banker";
+  } else {
+    // Tie-break: use banker edge (statistical advantage)
+    result = "Banker";
+  }
+
   const supportSignals = result === "Player" ? playerSignals : bankerSignals;
-  const hasMemorySupport = supportSignals.some(
-    (signal) => signal.name === SIGNAL_NAMES.MEMORY || signal.name === SIGNAL_NAMES.MEMORY_CONSENSUS
-  );
-
-  if (!hasMemorySupport && supportSignals.length < 2) {
-    return {
-      result: "Skip",
-      confidence: Math.round(margin * 100),
-      features,
-      reasoning: "⏸ ยังไม่มี memory หนุนพอ ข้ามก่อน",
-      signals,
-      shouldBet: false,
-    };
-  }
-
-  // Adaptive skip
-  const skipCheck = shouldSkip(margin, supportSignals.length, signals.length, recentAccuracy, cleanHistory.length);
-
-  if (skipCheck.skip) {
-    return {
-      result: "Skip",
-      confidence: Math.round(margin * 100),
-      features,
-      reasoning: `⏸ ${skipCheck.reason}`,
-      signals,
-      shouldBet: false,
-    };
-  }
-
   const sortedSupports = [...supportSignals].sort((a, b) => b.weight - a.weight);
-  const strongestSignal = sortedSupports[0] || bankerEdgeSignal();
+  const strongestSignal = sortedSupports[0] || bankerEdge;
 
-  const rawConfidence = 58 + margin * 32 + supportSignals.length * 4;
-  const confidence = Math.round(Math.max(60, Math.min(95, rawConfidence)) * 10) / 10;
+  const rawConfidence = 50 + margin * 40 + Math.min(supportSignals.length, 4) * 3;
+  const confidence = Math.round(Math.max(50, Math.min(95, rawConfidence)) * 10) / 10;
+
+  const signalNames = sortedSupports.slice(0, 3).map((s) => s.name).join(" + ");
+  const reasoning = signals.length > 0
+    ? `${signalNames} | ${supportSignals.length} สัญญาณ (${(margin * 100).toFixed(0)}%)`
+    : `BankerEdge (ค่าเริ่มต้น)`;
 
   return {
     result,
     confidence,
     features,
-    reasoning: `${strongestSignal.name} | หนุน ${supportSignals.length} สัญญาณ`,
-    signals,
+    reasoning,
+    signals: allSignals,
     shouldBet: true,
   };
+}
+
+// ==================== Training Log Integration ====================
+
+export function logPrediction(
+  history: BaccaratResult[],
+  prediction: Prediction,
+  actualResult: BaccaratResult
+) {
+  const features = prediction.features;
+  const playerScore = sumWeights(prediction.signals.filter((s) => s.prediction === "Player"));
+  const bankerScore = sumWeights(prediction.signals.filter((s) => s.prediction === "Banker"));
+  const totalScore = playerScore + bankerScore;
+
+  const entry: TrainingLogEntry = {
+    round: history.length,
+    timestamp: new Date().toISOString(),
+    historyLength: history.length - 1,
+    streak: features.streak,
+    pRatio: features.pRatio,
+    bRatio: features.bRatio,
+    tRatio: features.tRatio,
+    last10: history.slice(-11, -1).map((r) => r[0]).join(""),
+    signals: prediction.signals.map((s) => ({
+      name: s.name,
+      prediction: s.prediction,
+      weight: s.weight,
+    })),
+    signalCount: prediction.signals.length,
+    playerScore,
+    bankerScore,
+    margin: totalScore === 0 ? 0 : Math.abs(playerScore - bankerScore) / totalScore,
+    predicted: prediction.result,
+    confidence: prediction.confidence,
+    actual: actualResult,
+    correct: actualResult === "Tie" ? null : prediction.result === actualResult,
+  };
+
+  getTrainingLog().add(entry);
 }
 
 // ==================== Stats ====================
@@ -446,17 +398,12 @@ export function computeStats(history: BaccaratResult[], predictions: PredictionR
 
   let correctPredictions = 0;
   let incorrectPredictions = 0;
-  let skippedPredictions = 0;
   let attemptedPredictions = 0;
 
   for (let i = 0; i < Math.min(history.length, predictions.length); i += 1) {
     const actual = history[i];
     const predicted = predictions[i];
 
-    if (predicted === "Skip") {
-      skippedPredictions += 1;
-      continue;
-    }
     if (actual === "Tie") continue;
 
     attemptedPredictions += 1;
@@ -472,7 +419,6 @@ export function computeStats(history: BaccaratResult[], predictions: PredictionR
     correctPredictions,
     incorrectPredictions,
     attemptedPredictions,
-    skippedPredictions,
     currentStreak: count,
     streakType: last ?? null,
   };

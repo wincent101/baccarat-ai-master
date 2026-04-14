@@ -16,8 +16,6 @@ export function StatsPanel({ stats }: Props) {
       <div className="grid grid-cols-2 gap-3">
         <StatItem label="ทั้งหมด" value={stats.total} />
         <StatItem label="ความแม่นยำ" value={`${accuracy}%`} highlight />
-        <StatItem label="ยิงจริง" value={stats.attemptedPredictions} color="text-gold" />
-        <StatItem label="SKIP" value={stats.skippedPredictions} color="text-gold" />
         <StatItem label="ทายถูก" value={stats.correctPredictions} color="text-casino-green" />
         <StatItem label="ทายผิด" value={stats.incorrectPredictions} color="text-destructive" />
         <StatItem label="Player" value={stats.playerWins} color="text-casino-blue" />
