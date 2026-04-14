@@ -34,7 +34,8 @@ class TrainingLog {
     this.entries.push(entry);
 
     // Save to DB async (fire-and-forget with error logging)
-    const insertPromise = supabase.from("training_logs").insert({
+    const insertPromise = (async () => {
+      const { error } = await supabase.from("training_logs").insert({
       session_id: SESSION_ID,
       round_number: entry.round,
       history_length: entry.historyLength,
