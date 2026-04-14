@@ -21,20 +21,15 @@ export function GameHistory({ history, predictions }: Props) {
       <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
         {history.map((result, index) => {
           const predicted = predictions[index];
-          const isScored = predicted && predicted !== "Skip" && result !== "Tie";
+          const isScored = predicted && result !== "Tie";
           const isCorrect = isScored && predicted === result;
-          const isSkipped = predicted === "Skip";
           const cellClasses =
             result === "Player"
               ? "bg-casino-blue/20 text-casino-blue"
               : result === "Banker"
                 ? "bg-casino-red/20 text-casino-red"
                 : "bg-casino-green/20 text-casino-green";
-          const indicatorClasses = isSkipped
-            ? "bg-gold"
-            : isCorrect
-              ? "bg-casino-green"
-              : "bg-destructive";
+          const indicatorClasses = isCorrect ? "bg-casino-green" : "bg-destructive";
 
           return (
             <div
@@ -43,7 +38,9 @@ export function GameHistory({ history, predictions }: Props) {
               title={`#${index + 1}: ${result}${predicted ? ` | ทาย: ${predicted}` : ""}`}
             >
               {result[0]}
-              {predicted && <span className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ${indicatorClasses}`} />}
+              {predicted && result !== "Tie" && (
+                <span className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ${indicatorClasses}`} />
+              )}
             </div>
           );
         })}

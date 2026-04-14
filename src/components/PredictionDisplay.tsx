@@ -14,14 +14,11 @@ export function PredictionDisplay({ prediction }: Props) {
   }
 
   const isPlayer = prediction.result === "Player";
-  const isSkip = prediction.result === "Skip";
-  const toneClasses = isSkip
-    ? "border-gold bg-gold/10 text-gold"
-    : isPlayer
-      ? "border-casino-blue bg-casino-blue/20 text-casino-blue"
-      : "border-casino-red bg-casino-red/20 text-casino-red";
-  const barClasses = isSkip ? "bg-gold" : isPlayer ? "bg-casino-blue" : "bg-casino-red";
-  const label = isSkip ? "SKIP" : prediction.result === "Player" ? "PLAYER" : "BANKER";
+  const toneClasses = isPlayer
+    ? "border-casino-blue bg-casino-blue/20 text-casino-blue"
+    : "border-casino-red bg-casino-red/20 text-casino-red";
+  const barClasses = isPlayer ? "bg-casino-blue" : "bg-casino-red";
+  const label = isPlayer ? "PLAYER" : "BANKER";
 
   return (
     <div className="card-shadow animate-slide-up rounded-lg border border-border bg-card p-6">
@@ -31,15 +28,15 @@ export function PredictionDisplay({ prediction }: Props) {
 
       <div className="flex flex-col items-center gap-4">
         <div className={`animate-pulse-gold flex h-32 w-32 items-center justify-center rounded-full border-2 text-2xl font-display font-bold ${toneClasses}`}>
-          {isSkip ? "—" : prediction.result[0]}
+          {prediction.result[0]}
         </div>
 
         <div className="text-center">
-          <p className={`text-2xl font-bold ${isSkip ? "text-gold" : isPlayer ? "text-casino-blue" : "text-casino-red"}`}>
+          <p className={`text-2xl font-bold ${isPlayer ? "text-casino-blue" : "text-casino-red"}`}>
             {label}
           </p>
           <p className="mt-1 text-lg font-semibold text-gold">
-            {isSkip ? `ถือรอ ${prediction.confidence}%` : `ความมั่นใจ ${prediction.confidence}%`}
+            ความมั่นใจ {prediction.confidence}%
           </p>
         </div>
 
