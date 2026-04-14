@@ -14,7 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      training_logs: {
+        Row: {
+          actual: string
+          b_ratio: number
+          banker_score: number
+          confidence: number
+          correct: boolean | null
+          created_at: string
+          history_length: number
+          id: string
+          last_10: string
+          margin: number
+          p_ratio: number
+          player_score: number
+          predicted: string
+          round_number: number
+          session_id: string
+          signal_count: number
+          signals: Json
+          streak: number
+          t_ratio: number
+        }
+        Insert: {
+          actual: string
+          b_ratio?: number
+          banker_score?: number
+          confidence?: number
+          correct?: boolean | null
+          created_at?: string
+          history_length: number
+          id?: string
+          last_10?: string
+          margin?: number
+          p_ratio?: number
+          player_score?: number
+          predicted: string
+          round_number: number
+          session_id: string
+          signal_count?: number
+          signals?: Json
+          streak?: number
+          t_ratio?: number
+        }
+        Update: {
+          actual?: string
+          b_ratio?: number
+          banker_score?: number
+          confidence?: number
+          correct?: boolean | null
+          created_at?: string
+          history_length?: number
+          id?: string
+          last_10?: string
+          margin?: number
+          p_ratio?: number
+          player_score?: number
+          predicted?: string
+          round_number?: number
+          session_id?: string
+          signal_count?: number
+          signals?: Json
+          streak?: number
+          t_ratio?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
