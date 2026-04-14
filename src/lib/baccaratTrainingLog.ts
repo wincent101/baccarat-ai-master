@@ -36,26 +36,26 @@ class TrainingLog {
     // Save to DB async (fire-and-forget with error logging)
     const insertPromise = (async () => {
       const { error } = await supabase.from("training_logs").insert({
-      session_id: SESSION_ID,
-      round_number: entry.round,
-      history_length: entry.historyLength,
-      streak: entry.streak,
-      p_ratio: entry.pRatio,
-      b_ratio: entry.bRatio,
-      t_ratio: entry.tRatio,
-      last_10: entry.last10,
-      signals: entry.signals as any,
-      signal_count: entry.signalCount,
-      player_score: entry.playerScore,
-      banker_score: entry.bankerScore,
-      margin: entry.margin,
-      predicted: entry.predicted,
-      confidence: entry.confidence,
-      actual: entry.actual,
-      correct: entry.correct,
-    }).then(({ error }) => {
+        session_id: SESSION_ID,
+        round_number: entry.round,
+        history_length: entry.historyLength,
+        streak: entry.streak,
+        p_ratio: entry.pRatio,
+        b_ratio: entry.bRatio,
+        t_ratio: entry.tRatio,
+        last_10: entry.last10,
+        signals: entry.signals as any,
+        signal_count: entry.signalCount,
+        player_score: entry.playerScore,
+        banker_score: entry.bankerScore,
+        margin: entry.margin,
+        predicted: entry.predicted,
+        confidence: entry.confidence,
+        actual: entry.actual,
+        correct: entry.correct,
+      });
       if (error) console.error("Failed to save training log:", error.message);
-    });
+    })();
 
     this.pendingInserts.push(insertPromise);
   }
