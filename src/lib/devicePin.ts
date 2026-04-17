@@ -36,7 +36,7 @@ async function deriveKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
     ["deriveKey"]
   );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 200_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: salt as BufferSource, iterations: 200_000, hash: "SHA-256" },
     baseKey,
     { name: "AES-GCM", length: 256 },
     false,
@@ -131,9 +131,9 @@ export async function loginWithPin(pin: string) {
   let plain: ArrayBuffer;
   try {
     plain = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
+      { name: "AES-GCM", iv: iv as BufferSource },
       key,
-      b64decode(vault.ciphertext)
+      b64decode(vault.ciphertext) as BufferSource
     );
   } catch {
     throw new Error("PIN ไม่ถูกต้อง");
