@@ -220,7 +220,30 @@ export default function Index() {
 
   return (
     <div className="min-h-screen pb-8">
-      <header className="pt-6 pb-5 text-center lg:pt-8 lg:pb-6">
+      {/* Top Nav */}
+      <div className="mx-auto flex max-w-[1800px] items-center justify-between px-4 pt-4 lg:px-10">
+        <div className="text-xs text-muted-foreground">
+          เข้าใช้: <span className="text-foreground font-mono">{user?.email?.split("@")[0]}</span>
+          {role === "admin" && <span className="ml-2 rounded bg-gold/20 px-2 py-0.5 text-gold">ADMIN</span>}
+        </div>
+        <div className="flex gap-2">
+          {showPinPrompt && (
+            <Link to="/pin-setup">
+              <Button size="sm" variant="outline">🔢 ตั้ง PIN</Button>
+            </Link>
+          )}
+          {role === "admin" && (
+            <Link to="/admin">
+              <Button size="sm" variant="outline">⚙️ Admin</Button>
+            </Link>
+          )}
+          <Button size="sm" variant="ghost" onClick={async () => { await signOut(); toast.info("ออกจากระบบแล้ว"); }}>
+            ออก
+          </Button>
+        </div>
+      </div>
+
+      <header className="pt-4 pb-5 text-center lg:pt-6 lg:pb-6">
         <h1 className="font-display text-3xl font-bold tracking-wide text-gold-gradient md:text-4xl lg:text-5xl">
           BACCARAT AI
         </h1>
