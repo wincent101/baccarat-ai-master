@@ -1,20 +1,52 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { BaccaratResult, PredictionResult, predict, computeStats, learnFromOutcome, logPrediction, getSignalTracker } from "@/lib/baccaratEngine";
 import { getTrainingLog, fetchAllLogsFromDB, countLogsInDB } from "@/lib/baccaratTrainingLog";
+import { retrainFromDatabase, RetrainProgress } from "@/lib/baccaratRetrain";
 import { PredictionDisplay } from "@/components/PredictionDisplay";
 import { GameHistory } from "@/components/GameHistory";
 import { StatsPanel } from "@/components/StatsPanel";
 import { ResultButtons } from "@/components/ResultButtons";
+import { toast } from "sonner";
 
 export default function Index() {
   const [history, setHistory] = useState<BaccaratResult[]>([]);
   const [predictions, setPredictions] = useState<PredictionResult[]>([]);
   const [logCount, setLogCount] = useState(0);
   const [dbLogCount, setDbLogCount] = useState(0);
+  const [isRetraining, setIsRetraining] = useState(false);
+  const [lastRetrain, setLastRetrain] = useState<RetrainProgress | null>(null);
 
-  // Load DB log count on mount
+  // Load DB log count on mount + auto-retrain on first load
   useEffect(() => {
-    countLogsInDB().then(setDbLogCount);
+    (async () => {
+      const count = await countLogsInDB();
+      setDbLogCount(count);
+      // Auto-retrain ถ้ามีข้อมูลใน DB เพียงพอ
+      if (count >= 10) {
+        try {
+          const progress = await retrainFromDatabase();
+          setLastRetrain(progress);
+          toast.success(`🧠 AI พร้อมใช้งาน — เรียนรู้จาก ${progress.totalLogs} ตาใน DB`);
+        } catch (e) {
+          console.error("Auto-retrain failed:", e);
+        }
+      }
+    })();
+  }, []);
+
+  const handleRetrain = useCallback(async () => {
+    setIsRetraining(true);
+    try {
+      const progress = await retrainFromDatabase();
+      setLastRetrain(progress);
+      toast.success(
+        `✅ Retrain สำเร็จ: ${progress.totalLogs} ตา / ${progress.sessions} เซสชัน (${(progress.durationMs / 1000).toFixed(1)}s)`
+      );
+    } catch (e: any) {
+      toast.error(`Retrain ล้มเหลว: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setIsRetraining(false);
+    }
   }, []);
 
   const currentPrediction = useMemo(() => {
@@ -177,18 +209,36 @@ export default function Index() {
               disabled={dbLogCount === 0}
               className="flex-1 rounded-md bg-gold/20 px-3 py-2 text-sm font-semibold text-gold transition hover:bg-gold/30 disabled:opacity-40"
             >
-              Export CSV (DB ทั้งหมด)
+              Export CSV
             </button>
             <button
               onClick={handleExportJSON}
               disabled={dbLogCount === 0}
               className="flex-1 rounded-md bg-gold/20 px-3 py-2 text-sm font-semibold text-gold transition hover:bg-gold/30 disabled:opacity-40"
             >
-              Export JSON (DB ทั้งหมด)
+              Export JSON
             </button>
           </div>
+
+          <button
+            onClick={handleRetrain}
+            disabled={isRetraining || dbLogCount === 0}
+            className="mt-2 w-full rounded-md bg-gradient-to-r from-gold/30 to-gold/20 px-3 py-2.5 text-sm font-bold text-gold transition hover:from-gold/40 hover:to-gold/30 disabled:opacity-40"
+          >
+            {isRetraining ? "🔄 กำลัง Retrain..." : `🧠 Retrain AI จาก DB ทั้งหมด (${dbLogCount} ตา)`}
+          </button>
+
+          {lastRetrain && (
+            <div className="mt-2 rounded bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+              ✅ Retrain ล่าสุด: <span className="text-gold font-semibold">{lastRetrain.totalLogs}</span> ตา •{" "}
+              <span className="text-gold font-semibold">{lastRetrain.sessions}</span> เซสชัน •{" "}
+              <span className="text-gold font-semibold">{lastRetrain.patternsLearned}</span> patterns •{" "}
+              {(lastRetrain.durationMs / 1000).toFixed(1)}s
+            </div>
+          )}
+
           <p className="mt-2 text-center text-xs text-muted-foreground">
-            ทุกตาถูกบันทึกลง Database อัตโนมัติ • Export เพื่อนำไปเทรนโมเดล ML
+            AI Auto-Retrain ตอนเปิดเว็บ • กดปุ่มเพื่อ Retrain ใหม่หลังเล่นจบเซสชัน
           </p>
         </div>
 
