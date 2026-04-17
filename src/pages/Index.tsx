@@ -146,10 +146,82 @@ export default function Index() {
 
   const logSummary = useMemo(() => getTrainingLog().getSummary(), [logCount]);
 
+  const trainingLogPanel = (
+    <div className="card-shadow rounded-lg border border-border bg-card p-5 lg:p-6">
+      <h2 className="mb-3 font-display text-sm uppercase tracking-widest text-gold">
+        📊 Training Log (Database)
+      </h2>
+
+      <div className="grid grid-cols-2 gap-2 text-center text-sm mb-3">
+        <div className="rounded bg-secondary px-2 py-2">
+          <p className="text-xs text-muted-foreground">เซสชันนี้</p>
+          <p className="text-lg font-bold text-foreground">{logSummary.total}</p>
+        </div>
+        <div className="rounded bg-secondary px-2 py-2">
+          <p className="text-xs text-muted-foreground">ทั้งหมดใน DB</p>
+          <p className="text-lg font-bold text-gold">{dbLogCount}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-center text-sm">
+        <div className="rounded bg-secondary px-2 py-2">
+          <p className="text-xs text-muted-foreground">ถูก</p>
+          <p className="text-lg font-bold text-casino-green">{logSummary.correct}</p>
+        </div>
+        <div className="rounded bg-secondary px-2 py-2">
+          <p className="text-xs text-muted-foreground">ผิด</p>
+          <p className="text-lg font-bold text-destructive">{logSummary.wrong}</p>
+        </div>
+        <div className="rounded bg-secondary px-2 py-2">
+          <p className="text-xs text-muted-foreground">Accuracy</p>
+          <p className="text-lg font-bold text-gold">{logSummary.accuracy}%</p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={handleExportCSV}
+          disabled={dbLogCount === 0}
+          className="flex-1 rounded-md bg-gold/20 px-3 py-2 text-sm font-semibold text-gold transition hover:bg-gold/30 disabled:opacity-40"
+        >
+          Export CSV
+        </button>
+        <button
+          onClick={handleExportJSON}
+          disabled={dbLogCount === 0}
+          className="flex-1 rounded-md bg-gold/20 px-3 py-2 text-sm font-semibold text-gold transition hover:bg-gold/30 disabled:opacity-40"
+        >
+          Export JSON
+        </button>
+      </div>
+
+      <button
+        onClick={handleRetrain}
+        disabled={isRetraining || dbLogCount === 0}
+        className="mt-2 w-full rounded-md bg-gradient-to-r from-gold/30 to-gold/20 px-3 py-2.5 text-sm font-bold text-gold transition hover:from-gold/40 hover:to-gold/30 disabled:opacity-40"
+      >
+        {isRetraining ? "🔄 กำลัง Retrain..." : `🧠 Retrain AI จาก DB ทั้งหมด (${dbLogCount} ตา)`}
+      </button>
+
+      {lastRetrain && (
+        <div className="mt-2 rounded bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+          ✅ Retrain ล่าสุด: <span className="text-gold font-semibold">{lastRetrain.totalLogs}</span> ตา •{" "}
+          <span className="text-gold font-semibold">{lastRetrain.sessions}</span> เซสชัน •{" "}
+          <span className="text-gold font-semibold">{lastRetrain.patternsLearned}</span> patterns •{" "}
+          {(lastRetrain.durationMs / 1000).toFixed(1)}s
+        </div>
+      )}
+
+      <p className="mt-2 text-center text-xs text-muted-foreground">
+        AI Auto-Retrain ตอนเปิดเว็บ • กดปุ่มเพื่อ Retrain ใหม่หลังเล่นจบเซสชัน
+      </p>
+    </div>
+  );
+
   return (
     <div className="min-h-screen pb-8">
-      <header className="pt-8 pb-6 text-center">
-        <h1 className="font-display text-3xl font-bold tracking-wide text-gold-gradient md:text-4xl">
+      <header className="pt-6 pb-5 text-center lg:pt-8 lg:pb-6">
+        <h1 className="font-display text-3xl font-bold tracking-wide text-gold-gradient md:text-4xl lg:text-5xl">
           BACCARAT AI
         </h1>
         <p className="mt-1 text-sm uppercase tracking-widest text-muted-foreground">
@@ -166,83 +238,42 @@ export default function Index() {
         </p>
       </header>
 
-      <div className="container mx-auto max-w-lg space-y-5 px-4">
+      {/* Mobile / Tablet: stacked single column */}
+      <div className="container mx-auto max-w-lg space-y-5 px-4 lg:hidden">
         <PredictionDisplay prediction={currentPrediction} />
         <ResultButtons onResult={handleResult} onUndo={handleUndo} onReset={handleReset} canUndo={history.length > 0} />
         <StatsPanel stats={stats} />
-
-        {/* Training Log Panel */}
-        <div className="card-shadow rounded-lg border border-border bg-card p-6">
-          <h2 className="mb-3 font-display text-sm uppercase tracking-widest text-gold">
-            📊 Training Log (Database)
-          </h2>
-          
-          <div className="grid grid-cols-2 gap-2 text-center text-sm mb-3">
-            <div className="rounded bg-secondary px-2 py-2">
-              <p className="text-xs text-muted-foreground">เซสชันนี้</p>
-              <p className="text-lg font-bold text-foreground">{logSummary.total}</p>
-            </div>
-            <div className="rounded bg-secondary px-2 py-2">
-              <p className="text-xs text-muted-foreground">ทั้งหมดใน DB</p>
-              <p className="text-lg font-bold text-gold">{dbLogCount}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 text-center text-sm">
-            <div className="rounded bg-secondary px-2 py-2">
-              <p className="text-xs text-muted-foreground">ถูก</p>
-              <p className="text-lg font-bold text-casino-green">{logSummary.correct}</p>
-            </div>
-            <div className="rounded bg-secondary px-2 py-2">
-              <p className="text-xs text-muted-foreground">ผิด</p>
-              <p className="text-lg font-bold text-destructive">{logSummary.wrong}</p>
-            </div>
-            <div className="rounded bg-secondary px-2 py-2">
-              <p className="text-xs text-muted-foreground">Accuracy</p>
-              <p className="text-lg font-bold text-gold">{logSummary.accuracy}%</p>
-            </div>
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={handleExportCSV}
-              disabled={dbLogCount === 0}
-              className="flex-1 rounded-md bg-gold/20 px-3 py-2 text-sm font-semibold text-gold transition hover:bg-gold/30 disabled:opacity-40"
-            >
-              Export CSV
-            </button>
-            <button
-              onClick={handleExportJSON}
-              disabled={dbLogCount === 0}
-              className="flex-1 rounded-md bg-gold/20 px-3 py-2 text-sm font-semibold text-gold transition hover:bg-gold/30 disabled:opacity-40"
-            >
-              Export JSON
-            </button>
-          </div>
-
-          <button
-            onClick={handleRetrain}
-            disabled={isRetraining || dbLogCount === 0}
-            className="mt-2 w-full rounded-md bg-gradient-to-r from-gold/30 to-gold/20 px-3 py-2.5 text-sm font-bold text-gold transition hover:from-gold/40 hover:to-gold/30 disabled:opacity-40"
-          >
-            {isRetraining ? "🔄 กำลัง Retrain..." : `🧠 Retrain AI จาก DB ทั้งหมด (${dbLogCount} ตา)`}
-          </button>
-
-          {lastRetrain && (
-            <div className="mt-2 rounded bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-              ✅ Retrain ล่าสุด: <span className="text-gold font-semibold">{lastRetrain.totalLogs}</span> ตา •{" "}
-              <span className="text-gold font-semibold">{lastRetrain.sessions}</span> เซสชัน •{" "}
-              <span className="text-gold font-semibold">{lastRetrain.patternsLearned}</span> patterns •{" "}
-              {(lastRetrain.durationMs / 1000).toFixed(1)}s
-            </div>
-          )}
-
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            AI Auto-Retrain ตอนเปิดเว็บ • กดปุ่มเพื่อ Retrain ใหม่หลังเล่นจบเซสชัน
-          </p>
-        </div>
-
+        {trainingLogPanel}
         <GameHistory history={history} predictions={predictions} />
+      </div>
+
+      {/* Desktop (lg+): 3-column dashboard layout optimized for 1920x1080 */}
+      <div className="hidden lg:block">
+        <div className="mx-auto grid w-full max-w-[1800px] grid-cols-12 gap-6 px-6 xl:gap-8 xl:px-10">
+          {/* Left column — Prediction + Controls */}
+          <div className="col-span-4 space-y-5">
+            <PredictionDisplay prediction={currentPrediction} />
+            <ResultButtons
+              onResult={handleResult}
+              onUndo={handleUndo}
+              onReset={handleReset}
+              canUndo={history.length > 0}
+            />
+          </div>
+
+          {/* Middle column — Stats + Training Log */}
+          <div className="col-span-4 space-y-5">
+            <StatsPanel stats={stats} />
+            {trainingLogPanel}
+          </div>
+
+          {/* Right column — Game History (full height, scrollable) */}
+          <div className="col-span-4">
+            <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto pr-1">
+              <GameHistory history={history} predictions={predictions} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
