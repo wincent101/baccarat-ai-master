@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { BaccaratResult, PredictionResult, predict, computeStats, learnFromOutcome, logPrediction, getSignalTracker } from "@/lib/baccaratEngine";
 import { getTrainingLog, fetchAllLogsFromDB, countLogsInDB } from "@/lib/baccaratTrainingLog";
 import { retrainFromDatabase, RetrainProgress } from "@/lib/baccaratRetrain";
@@ -6,15 +7,20 @@ import { PredictionDisplay } from "@/components/PredictionDisplay";
 import { GameHistory } from "@/components/GameHistory";
 import { StatsPanel } from "@/components/StatsPanel";
 import { ResultButtons } from "@/components/ResultButtons";
+import { useAuth } from "@/contexts/AuthContext";
+import { hasPinOnDevice } from "@/lib/devicePin";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export default function Index() {
+  const { user, role, signOut } = useAuth();
   const [history, setHistory] = useState<BaccaratResult[]>([]);
   const [predictions, setPredictions] = useState<PredictionResult[]>([]);
   const [logCount, setLogCount] = useState(0);
   const [dbLogCount, setDbLogCount] = useState(0);
   const [isRetraining, setIsRetraining] = useState(false);
   const [lastRetrain, setLastRetrain] = useState<RetrainProgress | null>(null);
+  const showPinPrompt = !!user && !hasPinOnDevice();
 
   // Load DB log count on mount + auto-retrain on first load
   useEffect(() => {
