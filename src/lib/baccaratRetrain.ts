@@ -31,6 +31,9 @@ interface SessionRow {
  * 3. Replay แต่ละตา → ป้อนเข้า PatternMemory.learn() และ SignalTracker
  */
 export async function retrainFromDatabase(): Promise<RetrainProgress> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("User not authenticated"); // ต้อง Auth เสมอเพื่ออ่านข้อมูลจาก DB
+
   const startedAt = performance.now();
 
   // 1. Reset memory และ tracker
@@ -48,8 +51,8 @@ export async function retrainFromDatabase(): Promise<RetrainProgress> {
     const { data, error } = await supabase
       .from("training_logs")
       .select("session_id, round_number, actual, predicted, correct, signals")
-      .order("session_id", { ascending: true })
-      .order("round_number", { ascending: true })
+      .eq("user_id", user.id) // กรองเฉพาะ Data ของ User คนนั้น
+      .order("created_at", { ascending: true }) // เรียงตามเวลาตามจริงที่เกิดขึ้นในเซิร์ฟเวอร์
       .range(from, from + pageSize - 1);
 
     if (error) throw new Error(error.message);
@@ -83,6 +86,7 @@ export async function retrainFromDatabase(): Promise<RetrainProgress> {
 
   // 4. Replay แต่ละ session
   for (const rows of bySession.values()) {
+    // การันตีว่าแต่ละเซสชัน เรียงตาม Round เสมอ
     rows.sort((a, b) => a.round_number - b.round_number);
 
     const history: BaccaratResult[] = [];
@@ -94,9 +98,15 @@ export async function retrainFromDatabase(): Promise<RetrainProgress> {
       memory.learn(history, actual);
       patternsLearned += 1;
 
+      // ป้องกัน Error หาก Database ดึงออกมาเป็น String แทน Array
+      let parsedSignals = row.signals;
+      if (typeof parsedSignals === 'string') {
+        try { parsedSignals = JSON.parse(parsedSignals); } catch (e) {}
+      }
+
       // Recalibrate signals จาก log เก่า
-      if (Array.isArray(row.signals) && actual !== "Tie") {
-        for (const sig of row.signals) {
+      if (Array.isArray(parsedSignals) && actual !== "Tie") {
+        for (const sig of parsedSignals) {
           if (!sig?.name || !sig?.prediction) continue;
           const wasCorrect = sig.prediction === actual;
           tracker.recordOutcome(sig.name, wasCorrect, Number(sig.weight) || 0.1);

@@ -123,9 +123,13 @@ export function getTrainingLog(): TrainingLog {
 
 /** ดึง log จาก DB ทั้งหมด (สำหรับ export หรือ retrain) */
 export async function fetchAllLogsFromDB(): Promise<TrainingLogEntry[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return []; // ตรวจสอบ Auth เสมอ
+
   const { data, error } = await supabase
     .from("training_logs")
     .select("*")
+    .eq("user_id", user.id) // ดึงเฉพาะข้อมูลของ user ตัวเอง
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -156,9 +160,13 @@ export async function fetchAllLogsFromDB(): Promise<TrainingLogEntry[]> {
 
 /** นับจำนวน log ทั้งหมดใน DB */
 export async function countLogsInDB(): Promise<number> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return 0; // ต้องล็อกอินก่อนถึงจะนับข้อมูลได้แม่นยำ
+
   const { count, error } = await supabase
     .from("training_logs")
-    .select("*", { count: "exact", head: true });
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id); // นับเฉพาะของ user ตัวเอง
 
   if (error) return 0;
   return count || 0;

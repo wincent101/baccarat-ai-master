@@ -25,6 +25,49 @@ export default function Auth() {
     if (!key) return;
     setBusy(true);
     const email = accessKeyToEmail(key);
+
+    // --- ระบบสร้างแอดมินคนแรก (First-time Setup Backdoor) ---
+    if (key === "ADMIN-9999-SETUP") {
+      // 1. ลอง Sign Up สร้างบัญชีก่อน
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password: key,
+      });
+
+      // 2. ลอง Sign In เพื่อดึง Session 
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password: key,
+      });
+
+      if (signInError) {
+        toast.error(`สร้างบัญชีล้มเหลว: ${signInError.message}`);
+        setBusy(false);
+        return;
+      }
+
+      // 3. พยายามตั้งค่า Role ให้เป็น admin
+      const userId = signInData.user?.id;
+      if (userId) {
+        const { error: roleError } = await supabase
+          .from("user_roles")
+          .upsert({ user_id: userId, role: "admin" }, { onConflict: "user_id" });
+
+        if (roleError) {
+          console.warn("ไม่สามารถเพิ่ม Role อัตโนมัติได้ (อาจติด RLS):", roleError.message);
+          toast.info("สร้างบัญชีสำเร็จ! แต่คุณต้องไปเพิ่ม Role 'admin' ใน Supabase Dashboard ด้วยตัวเอง");
+        } else {
+          toast.success("สร้างและเข้าสู่ระบบ Master Admin สำเร็จ!");
+        }
+      }
+
+      setBusy(false);
+      navigate("/", { replace: true });
+      return;
+    }
+    // --- จบระบบสร้างแอดมินคนแรก ---
+
+    // ระบบ Login ปกติ
     const { error } = await supabase.auth.signInWithPassword({ email, password: key });
     setBusy(false);
     if (error) {
@@ -102,7 +145,7 @@ export default function Auth() {
                 autoFocus
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                Key ได้รับจากแอดมินเท่านั้น
+                Key ได้รับจากแอดมินเท่านั้น (ใช้ ADMIN-9999-SETUP สำหรับครั้งแรก)
               </p>
             </div>
             <Button type="submit" disabled={busy} className="w-full">
