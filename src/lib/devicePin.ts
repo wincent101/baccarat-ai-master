@@ -92,7 +92,7 @@ export async function setupPin(opts: {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(opts.pin, salt);
   const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: iv as BufferSource },
     key,
     new TextEncoder().encode(opts.accessKey)
   );
