@@ -328,6 +328,12 @@ export function learnFromOutcome(
     const wasCorrect = signal.prediction === actualResult;
     tracker.recordOutcome(signal.name, wasCorrect, signal.weight);
   }
+
+  // บันทึก overall form (ใช้ majority direction ของ signals)
+  const playerWeight = signalsUsed.filter((s) => s.prediction === "Player").reduce((a, s) => a + s.weight, 0);
+  const bankerWeight = signalsUsed.filter((s) => s.prediction === "Banker").reduce((a, s) => a + s.weight, 0);
+  const overallPick: NonTieResult = playerWeight > bankerWeight ? "Player" : "Banker";
+  tracker.recordOverall(overallPick === actualResult);
 }
 
 // ==================== Main Prediction ====================
@@ -359,15 +365,25 @@ export function predict(history: BaccaratResult[]): Prediction {
   const totalScore = playerScore + bankerScore;
 
   const margin = totalScore === 0 ? 0 : Math.abs(playerScore - bankerScore) / totalScore;
-  
-  // Always pick a side - never skip
+
+  // ===== Anti-volatility: ตรวจสอบความขัดแย้งของสัญญาณ =====
+  // ถ้า signals ขัดแย้งกันมาก (margin ต่ำ) ให้เอนเอียงไป Banker (statistical edge)
+  const isConflicted = signals.length >= 2 && margin < 0.20;
+
+  // ===== Form-based dampening: ระบบกำลังเย็นอยู่หรือไม่ =====
+  const overallForm = tracker.getOverallForm(); // -0.5..+0.5
+
   let result: PredictionResult;
   if (playerScore > bankerScore) {
     result = "Player";
   } else if (bankerScore > playerScore) {
     result = "Banker";
   } else {
-    // Tie-break: use banker edge (statistical advantage)
+    result = "Banker";
+  }
+
+  // ถ้าขัดแย้งหนัก + ระบบกำลังเย็น → กลับไปใช้ Banker edge เป็นหลัก
+  if (isConflicted && overallForm < -0.1) {
     result = "Banker";
   }
 
@@ -375,12 +391,21 @@ export function predict(history: BaccaratResult[]): Prediction {
   const sortedSupports = [...supportSignals].sort((a, b) => b.weight - a.weight);
   const strongestSignal = sortedSupports[0] || bankerEdge;
 
-  const rawConfidence = 50 + margin * 40 + Math.min(supportSignals.length, 4) * 3;
-  const confidence = Math.round(Math.max(50, Math.min(95, rawConfidence)) * 10) / 10;
+  // ===== Confidence calculation พร้อม form adjustment =====
+  let rawConfidence = 50 + margin * 38 + Math.min(supportSignals.length, 4) * 2.5;
+
+  // ปรับตาม form: ระบบกำลังร้อน +5, กำลังเย็น -8 (ลดมากกว่าเพิ่ม = conservative)
+  rawConfidence += overallForm * (overallForm > 0 ? 10 : 16);
+
+  // ลด confidence เมื่อขัดแย้ง
+  if (isConflicted) rawConfidence -= 8;
+
+  const confidence = Math.round(Math.max(50, Math.min(92, rawConfidence)) * 10) / 10;
 
   const signalNames = sortedSupports.slice(0, 3).map((s) => s.name).join(" + ");
+  const formTag = overallForm > 0.15 ? " 🔥" : overallForm < -0.15 ? " ❄️" : "";
   const reasoning = signals.length > 0
-    ? `${signalNames} | ${supportSignals.length} สัญญาณ (${(margin * 100).toFixed(0)}%)`
+    ? `${signalNames} | ${supportSignals.length} สัญญาณ (${(margin * 100).toFixed(0)}%)${formTag}`
     : `BankerEdge (ค่าเริ่มต้น)`;
 
   return {
