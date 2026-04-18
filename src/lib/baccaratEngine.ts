@@ -44,19 +44,43 @@ interface SignalRecord {
   correct: number;
   wrong: number;
   baseWeight: number;
+  /** Exponential Moving Average ของ accuracy (0..1) - ให้น้ำหนักผลลัพธ์ล่าสุดมากกว่า */
+  ema: number;
+  /** ผลลัพธ์ล่าสุด (true=ถูก, false=ผิด) สำหรับ recent form */
+  recent: boolean[];
 }
+
+const EMA_ALPHA = 0.18; // น้ำหนักผลล่าสุด ~last 5-6 rounds มีอิทธิพลเด่น
+const RECENT_WINDOW = 8;
 
 class SignalTracker {
   private records: Map<string, SignalRecord> = new Map();
+  /** ผลทายโดยรวมล่าสุด สำหรับวัด overall hot/cold streak */
+  private overallRecent: boolean[] = [];
 
   recordOutcome(signalName: string, wasCorrect: boolean, baseWeight: number) {
     let rec = this.records.get(signalName);
     if (!rec) {
-      rec = { name: signalName, correct: 0, wrong: 0, baseWeight };
+      rec = { name: signalName, correct: 0, wrong: 0, baseWeight, ema: 0.5, recent: [] };
       this.records.set(signalName, rec);
     }
     if (wasCorrect) rec.correct++;
     else rec.wrong++;
+    rec.ema = rec.ema * (1 - EMA_ALPHA) + (wasCorrect ? 1 : 0) * EMA_ALPHA;
+    rec.recent.push(wasCorrect);
+    if (rec.recent.length > RECENT_WINDOW) rec.recent.shift();
+  }
+
+  recordOverall(wasCorrect: boolean) {
+    this.overallRecent.push(wasCorrect);
+    if (this.overallRecent.length > RECENT_WINDOW) this.overallRecent.shift();
+  }
+
+  /** ระบบกำลังร้อน (>0) หรือเย็น (<0) อยู่ — ใช้ปรับ confidence */
+  getOverallForm(): number {
+    if (this.overallRecent.length < 4) return 0;
+    const wins = this.overallRecent.filter(Boolean).length;
+    return wins / this.overallRecent.length - 0.5; // -0.5..+0.5
   }
 
   getMultiplier(signalName: string): number {
@@ -65,24 +89,40 @@ class SignalTracker {
     const total = rec.correct + rec.wrong;
     if (total < 3) return 1.0;
 
-    const accuracy = rec.correct / total;
-    if (accuracy < 0.45) return 0.1;
-    if (accuracy < 0.50) return 0.2;
-    if (accuracy < 0.55) return 0.5;
-    if (accuracy < 0.60) return 0.8;
-    if (accuracy < 0.65) return 1.0;
-    if (accuracy < 0.70) return 1.3;
-    if (accuracy < 0.75) return 1.6;
-    return 2.0;
+    // ผสม long-term accuracy กับ EMA (recent form) — ให้น้ำหนัก recent มากกว่าเมื่อข้อมูลน้อย
+    const longTerm = rec.correct / total;
+    const recentWeight = Math.min(0.65, 0.35 + 30 / (total + 30));
+    const blended = rec.ema * recentWeight + longTerm * (1 - recentWeight);
+
+    // ตรวจจับ cold streak — ถ้าผิด 4 ครั้งติดในล่าสุด ตัดน้ำหนักหนักมาก
+    const last4 = rec.recent.slice(-4);
+    if (last4.length === 4 && last4.every((r) => !r)) return 0.05;
+    const last3 = rec.recent.slice(-3);
+    if (last3.length === 3 && last3.every((r) => !r)) return 0.15;
+    // hot streak — ถูก 3 ครั้งติด ให้บูสต์
+    if (last3.length === 3 && last3.every(Boolean)) {
+      return Math.min(2.2, 1.4 + blended * 0.8);
+    }
+
+    if (blended < 0.40) return 0.05;
+    if (blended < 0.45) return 0.15;
+    if (blended < 0.50) return 0.35;
+    if (blended < 0.55) return 0.65;
+    if (blended < 0.60) return 1.0;
+    if (blended < 0.65) return 1.35;
+    if (blended < 0.70) return 1.65;
+    if (blended < 0.75) return 1.9;
+    return 2.1;
   }
 
-  getStats(): Map<string, { accuracy: number; total: number }> {
-    const stats = new Map<string, { accuracy: number; total: number }>();
+  getStats(): Map<string, { accuracy: number; total: number; ema: number }> {
+    const stats = new Map<string, { accuracy: number; total: number; ema: number }>();
     this.records.forEach((rec, name) => {
       const total = rec.correct + rec.wrong;
       stats.set(name, {
         accuracy: total > 0 ? rec.correct / total : 0,
         total,
+        ema: rec.ema,
       });
     });
     return stats;
@@ -90,6 +130,7 @@ class SignalTracker {
 
   reset() {
     this.records.clear();
+    this.overallRecent = [];
     getPatternMemory().reset();
   }
 }
@@ -287,6 +328,12 @@ export function learnFromOutcome(
     const wasCorrect = signal.prediction === actualResult;
     tracker.recordOutcome(signal.name, wasCorrect, signal.weight);
   }
+
+  // บันทึก overall form (ใช้ majority direction ของ signals)
+  const playerWeight = signalsUsed.filter((s) => s.prediction === "Player").reduce((a, s) => a + s.weight, 0);
+  const bankerWeight = signalsUsed.filter((s) => s.prediction === "Banker").reduce((a, s) => a + s.weight, 0);
+  const overallPick: NonTieResult = playerWeight > bankerWeight ? "Player" : "Banker";
+  tracker.recordOverall(overallPick === actualResult);
 }
 
 // ==================== Main Prediction ====================
@@ -318,15 +365,25 @@ export function predict(history: BaccaratResult[]): Prediction {
   const totalScore = playerScore + bankerScore;
 
   const margin = totalScore === 0 ? 0 : Math.abs(playerScore - bankerScore) / totalScore;
-  
-  // Always pick a side - never skip
+
+  // ===== Anti-volatility: ตรวจสอบความขัดแย้งของสัญญาณ =====
+  // ถ้า signals ขัดแย้งกันมาก (margin ต่ำ) ให้เอนเอียงไป Banker (statistical edge)
+  const isConflicted = signals.length >= 2 && margin < 0.20;
+
+  // ===== Form-based dampening: ระบบกำลังเย็นอยู่หรือไม่ =====
+  const overallForm = tracker.getOverallForm(); // -0.5..+0.5
+
   let result: PredictionResult;
   if (playerScore > bankerScore) {
     result = "Player";
   } else if (bankerScore > playerScore) {
     result = "Banker";
   } else {
-    // Tie-break: use banker edge (statistical advantage)
+    result = "Banker";
+  }
+
+  // ถ้าขัดแย้งหนัก + ระบบกำลังเย็น → กลับไปใช้ Banker edge เป็นหลัก
+  if (isConflicted && overallForm < -0.1) {
     result = "Banker";
   }
 
@@ -334,12 +391,21 @@ export function predict(history: BaccaratResult[]): Prediction {
   const sortedSupports = [...supportSignals].sort((a, b) => b.weight - a.weight);
   const strongestSignal = sortedSupports[0] || bankerEdge;
 
-  const rawConfidence = 50 + margin * 40 + Math.min(supportSignals.length, 4) * 3;
-  const confidence = Math.round(Math.max(50, Math.min(95, rawConfidence)) * 10) / 10;
+  // ===== Confidence calculation พร้อม form adjustment =====
+  let rawConfidence = 50 + margin * 38 + Math.min(supportSignals.length, 4) * 2.5;
+
+  // ปรับตาม form: ระบบกำลังร้อน +5, กำลังเย็น -8 (ลดมากกว่าเพิ่ม = conservative)
+  rawConfidence += overallForm * (overallForm > 0 ? 10 : 16);
+
+  // ลด confidence เมื่อขัดแย้ง
+  if (isConflicted) rawConfidence -= 8;
+
+  const confidence = Math.round(Math.max(50, Math.min(92, rawConfidence)) * 10) / 10;
 
   const signalNames = sortedSupports.slice(0, 3).map((s) => s.name).join(" + ");
+  const formTag = overallForm > 0.15 ? " 🔥" : overallForm < -0.15 ? " ❄️" : "";
   const reasoning = signals.length > 0
-    ? `${signalNames} | ${supportSignals.length} สัญญาณ (${(margin * 100).toFixed(0)}%)`
+    ? `${signalNames} | ${supportSignals.length} สัญญาณ (${(margin * 100).toFixed(0)}%)${formTag}`
     : `BankerEdge (ค่าเริ่มต้น)`;
 
   return {
